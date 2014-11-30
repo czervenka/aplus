@@ -1,6 +1,9 @@
 from threading import Event, RLock
 
 
+class Args(tuple):
+    pass
+
 class CountdownLatch:
     def __init__(self, count):
         assert count >= 0
@@ -75,6 +78,7 @@ class Promise:
                 self.reject(e)
         else:
             self._fulfill(x)
+        return self
 
     def _fulfill(self, value):
         with self._cb_lock:
@@ -111,7 +115,7 @@ class Promise:
 
         with self._cb_lock:
             if self._state != Promise.PENDING:
-                return
+                return self
 
             self._reason = reason
             self._state = self.REJECTED
@@ -128,12 +132,21 @@ class Promise:
             # Notify all waiting
             self._event.set()
 
-        for errback in errbacks:
-            try:
-                errback(reason)
-            except Exception:
-                # Ignore errors in errback
-                pass
+        if not errbacks and hasattr(reason, 'printme'):
+            if not hasattr(reason.printme, 'called'):
+                # TODO: use logging
+                reason.printme()
+                reason.printme.called = True
+        else:
+            for errback in errbacks:
+                try:
+                    errback(reason)
+                except Exception:
+                    # TODO: use logging
+                    import traceback
+                    traceback.print_exc()
+                    # Ignore errors in errback
+        return self
 
     @property
     def isPending(self):
@@ -188,7 +201,7 @@ class Promise:
         with self._cb_lock:
             if self._state == self.PENDING:
                 self._callbacks.append(f)
-                return
+                return self
 
         # This is a correct performance optimization in case of concurrency.
         # State can never change once it is not PENDING anymore and is thus safe to read
@@ -197,6 +210,7 @@ class Promise:
             f(self._value)
         else:
             pass
+        return self
 
     def addErrback(self, f):
         """
@@ -210,7 +224,7 @@ class Promise:
         with self._cb_lock:
             if self._state == self.PENDING:
                 self._errbacks.append(f)
-                return
+                return self
 
         # This is a correct performance optimization in case of concurrency.
         # State can never change once it is not PENDING anymore and is thus safe to read
@@ -219,6 +233,7 @@ class Promise:
             f(self._reason)
         else:
             pass
+        return self
 
     def done(self, success=None, failure=None):
         """
@@ -294,10 +309,18 @@ class Promise:
             """
             try:
                 if _isFunction(success):
-                    ret.fulfill(success(v))
+                    if isinstance(v, Args):
+                        ret.fulfill(success(*v))
+                    else:
+                        ret.fulfill(success(v))
                 else:
                     ret.fulfill(v)
             except Exception as e:
+                # TODO: use logging
+                import traceback, sys
+                e.traceback = sys.exc_type, sys.exc_value, sys.exc_traceback
+                e.printme = lambda: traceback.print_exception(*e.traceback, limit=50)
+                # traceback.print_exc()
                 ret.reject(e)
 
         def callAndReject(r):
@@ -307,11 +330,12 @@ class Promise:
             """
             try:
                 if _isFunction(failure):
-                    ret.fulfill(failure(r))
+                    ret.reject(failure(r))
                 else:
                     ret.reject(r)
             except Exception as e:
                 ret.reject(e)
+
 
         self.done(callAndFulfill, callAndReject)
 
