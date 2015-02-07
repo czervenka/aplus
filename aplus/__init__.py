@@ -1,5 +1,7 @@
+import logging
 from threading import Event, RLock
 
+logger = logging.getLogger(__name__)
 
 class Args(tuple):
     pass
@@ -104,14 +106,14 @@ class Promise:
             try:
                 callback(value)
             except Exception:
-                # Ignore errors in callbacks
-                pass
+                # TODO: use logging
+                logger.exception('Error while handling success callback %s.', callback)
 
     def reject(self, reason):
         """
         Reject this promise for a given reason.
         """
-        assert isinstance(reason, Exception)
+        assert isinstance(reason, Exception), 'Rejection reason should be instance of Exception (got %r)' % type(reason)
 
         with self._cb_lock:
             if self._state != Promise.PENDING:
@@ -132,20 +134,21 @@ class Promise:
             # Notify all waiting
             self._event.set()
 
-        if not errbacks and hasattr(reason, 'printme'):
-            if not hasattr(reason.printme, 'called'):
+        if not errbacks:
+            logger.info('possibly uncaught exception (aplus)')
+            if hasattr(reason, 'printme') and not hasattr(reason.printme, 'called'):
                 # TODO: use logging
                 reason.printme()
                 reason.printme.called = True
+            else:
+                print 'else'
+                logger.exception(reason)
         else:
             for errback in errbacks:
                 try:
                     errback(reason)
                 except Exception:
-                    # TODO: use logging
-                    import traceback
-                    traceback.print_exc()
-                    # Ignore errors in errback
+                    logger.exception('Exception while handling error callback %s.', errback)
         return self
 
     @property
@@ -319,7 +322,7 @@ class Promise:
                 # TODO: use logging
                 import traceback, sys
                 e.traceback = sys.exc_type, sys.exc_value, sys.exc_traceback
-                e.printme = lambda: traceback.print_exception(*e.traceback, limit=50)
+                e.printme = lambda: logger.exception(''.join(traceback.format_exception(*e.traceback, limit=50)))
                 # traceback.print_exc()
                 ret.reject(e)
 
@@ -334,6 +337,9 @@ class Promise:
                 else:
                     ret.reject(r)
             except Exception as e:
+                import traceback, sys
+                e.traceback = sys.exc_type, sys.exc_value, sys.exc_traceback
+                e.printme = lambda: logger.exception(''.join(traceback.format_exception(*e.traceback, limit=50)))
                 ret.reject(e)
 
 
