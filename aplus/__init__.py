@@ -3,6 +3,33 @@ from threading import Event, RLock
 
 logger = logging.getLogger(__name__)
 
+ERR_LOCK = RLock()
+
+UNHANDLED_ERRORS = set()
+def defer_error(error):
+    with ERR_LOCK:
+        UNHANDLED_ERRORS.add(error)
+
+def remove_deferred_error(error):
+    with ERR_LOCK:
+        if error in UNHANDLED_ERRORS:
+            UNHANDLED_ERRORS.remove(error)
+
+def get_unhandled_errors():
+    return UNHANDLED_ERRORS
+
+def cleanup():
+    with ERR_LOCK:
+        if UNHANDLED_ERRORS:
+            for err in UNHANDLED_ERRORS:
+                logger.error('Possibly unhandled error in a promise %s' % err)
+                if hasattr(err, 'printme'):
+                    err.printme()
+                else:
+                    logger.exception(err)
+import atexit
+atexit.register(cleanup)
+
 class Args(tuple):
     pass
 
@@ -135,18 +162,12 @@ class Promise:
             self._event.set()
 
         if not errbacks:
-            logger.info('possibly uncaught exception (aplus)')
-            if hasattr(reason, 'printme') and not hasattr(reason.printme, 'called'):
-                # TODO: use logging
-                reason.printme()
-                reason.printme.called = True
-            else:
-                print 'else'
-                logger.exception(reason)
+            defer_error(reason)
         else:
             for errback in errbacks:
                 try:
                     errback(reason)
+                    remove_deferred_error(reason)
                 except Exception:
                     logger.exception('Exception while handling error callback %s.', errback)
         return self
@@ -323,7 +344,6 @@ class Promise:
                 import traceback, sys
                 e.traceback = sys.exc_type, sys.exc_value, sys.exc_traceback
                 e.printme = lambda: logger.exception(''.join(traceback.format_exception(*e.traceback, limit=50)))
-                # traceback.print_exc()
                 ret.reject(e)
 
         def callAndReject(r):
@@ -334,6 +354,7 @@ class Promise:
             try:
                 if _isFunction(failure):
                     ret.reject(failure(r))
+                    remove_deferred_error(r)
                 else:
                     ret.reject(r)
             except Exception as e:
