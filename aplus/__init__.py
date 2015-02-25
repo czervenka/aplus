@@ -256,6 +256,7 @@ class Promise:
         # without acquiring the lock.
         if self._state == self.REJECTED:
             f(self._reason)
+            remove_deferred_error(self._reason)
         else:
             pass
         return self
