@@ -27,6 +27,7 @@ def cleanup():
                     err.printme()
                 else:
                     logger.exception(err)
+        UNHANDLED_ERRORS.clear()
 import atexit
 atexit.register(cleanup)
 
