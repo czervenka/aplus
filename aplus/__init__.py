@@ -1,5 +1,9 @@
 import logging
-from threading import Event, RLock
+try:
+    from gevent.event import Event
+    from gevent.lock import RLock
+except ImportError:
+    from threading import Event, RLock
 
 logger = logging.getLogger(__name__)
 
