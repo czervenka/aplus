@@ -8,19 +8,23 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 ERR_LOCK = RLock()
-
 UNHANDLED_ERRORS = set()
+
+
 def defer_error(error):
     with ERR_LOCK:
         UNHANDLED_ERRORS.add(error)
+
 
 def remove_deferred_error(error):
     with ERR_LOCK:
         if error in UNHANDLED_ERRORS:
             UNHANDLED_ERRORS.remove(error)
 
+
 def get_unhandled_errors():
     return UNHANDLED_ERRORS
+
 
 def cleanup():
     with ERR_LOCK:
@@ -32,11 +36,15 @@ def cleanup():
                 else:
                     logger.exception(err)
         UNHANDLED_ERRORS.clear()
+
+
 import atexit
 atexit.register(cleanup)
 
+
 class Args(tuple):
     pass
+
 
 class CountdownLatch:
     def __init__(self, count):
@@ -145,7 +153,8 @@ class Promise:
         """
         Reject this promise for a given reason.
         """
-        assert isinstance(reason, Exception), 'Rejection reason should be instance of Exception (got %r)' % type(reason)
+        if not isinstance(reason, Exception):
+            raise ValueError('Rejection reason should be instance of Exception (got %r)' % type(reason))
 
         with self._cb_lock:
             if self._state != Promise.PENDING:
