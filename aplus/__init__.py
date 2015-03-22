@@ -226,7 +226,7 @@ class Promise:
         polling but instead utilizes a "real" synchronization
         scheme.
         """
-        self._event.wait(timeout)
+        return self._event.wait(timeout)
 
     def addCallback(self, f):
         """
